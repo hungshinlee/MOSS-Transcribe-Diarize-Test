@@ -1,0 +1,52 @@
+這份文件列出 data/ 底下 4 個 tar.gz 要怎麼解壓縮。每個 tar.gz 都是自包含的——
+裡面不只有音檔，還包含它自己需要的 manifest/jsonl/評分程式等小檔案，解壓縮時
+直接解到 data/ 底下（不是解到某個子資料夾裡），檔案會自動落在正確的相對路徑。
+
+model/checkpoint-8000-deploy/
+  （已包含，不用放東西）fine-tune 後的 checkpoint，已打包成可直接
+  trust_remote_code=True 載入的完整格式（pretrain 的 tokenizer/processor
+  檔案 + checkpoint 自己的 config.json/model.safetensors/generation_config.json）。
+
+data/train_audio.tar.gz
+  內容：train_full.jsonl（完整fine-tune訓練資料，3226筆，conversation格式）+
+  train_audio/（13 個語者資料夾，每個底下是 <record_id>_<paragraph_id>.wav
+  格式的音檔，共 3226 個檔案），解壓縮後約 12GB。
+  解壓縮方式：
+    cd data && tar -xzf train_audio.tar.gz
+  解壓縮後會產生 data/train_full.jsonl 跟 data/train_audio/<speaker>/<file>.wav，
+  train_full.jsonl 裡的相對路徑直接對應這個結構，不用額外調整。
+
+data/dev_audio.tar.gz
+  內容：dev.jsonl（訓練時用的驗證集manifest）+ dev_audio/manifest.jsonl +
+  dev_audio/audio/（10 個真人錄音檔：738.wav, 895.wav, 837.wav, 600.wav,
+  743.wav, 739.wav, 926.wav, 998.wav, 514.wav, 591_clip.wav），解壓縮後約 21MB。
+  解壓縮方式：
+    cd data && tar -xzf dev_audio.tar.gz
+  解壓縮後會產生 data/dev.jsonl、data/dev_audio/manifest.jsonl、
+  data/dev_audio/audio/*.wav。
+
+data/hotword_benchmark_audio.tar.gz
+  內容：整個 hotword_benchmark/ 資料夾——評分程式/標準答案（evaluate.py、
+  hotwords.json、pseudo_transcripts.json、true_transcripts/、README.md等）+
+  audio/（66 句真人錄音 + 一些變體檔案，例如 503_Transamine.wav 這種，共 90 個
+  wav），解壓縮後約 201MB。
+  解壓縮方式：
+    cd data && tar -xzf hotword_benchmark_audio.tar.gz
+  解壓縮後會產生 data/hotword_benchmark/（含 audio/ 子資料夾）。
+
+data/after0602.tar.gz
+  內容：50 個真人醫療錄音檔（*.wav），長度從 6 秒到 17 分鐘不等，解壓縮後約 493MB。
+  這些是用來重現 after0602 案例（1063/1208/1216 等）的音檔。
+  解壓縮方式：
+    cd data && tar -xzf after0602.tar.gz
+  解壓縮後會產生 data/after0602/*.wav。
+  目的：checkpoint-8000 的 Production pipeline 測試全部 50 個音檔都用過這批資料，
+  其中 1063/1208/1216 三個案例是「真正vLLM vs HF模擬」重複退化落差的關鍵證據，
+  不是可有可無的附屬測試集。
+
+---
+全部解壓縮完之後，用下面指令快速檢查數量對不對：
+  find data/train_audio -name '*.wav' | wc -l            # 應該是 3226
+  find data/dev_audio/audio -name '*.wav' | wc -l         # 應該是 10
+  find data/hotword_benchmark/audio -name '*.wav' | wc -l # 應該是 90
+  find data/after0602 -name '*.wav' | wc -l               # 應該是 50

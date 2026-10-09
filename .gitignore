@@ -1,0 +1,24 @@
+# Data & Model weights (symlinked or large binaries)
+data/
+model/
+*.tar.gz
+*.wav
+*.safetensors
+*.bin
+
+# Python environment & caches
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Experiment outputs
+outputs/
+wandb/
+
+# OS / Editor files
+.DS_Store
+.idea/
+.vscode/
