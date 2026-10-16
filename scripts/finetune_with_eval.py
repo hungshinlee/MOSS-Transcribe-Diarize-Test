@@ -55,11 +55,63 @@ from transformers import AutoModelForCausalLM, HfArgumentParser, Trainer, Traini
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "finetune_official"))
-from finetune import ConversationDataset, DataCollator, ScriptArguments as _BaseScriptArguments
+from pathlib import Path
+from torch.utils.data import Dataset
+from finetune import DataCollator, ScriptArguments as _BaseScriptArguments
 from moss_transcribe_diarize.processing_moss_transcribe_diarize import MossTranscribeDiarizeProcessor
 from mer_utils import compute_mer, normalize_for_eval
 from batch_generate import batched_transcribe
 from eval_hotword_testset import run_hotword_eval
+import json
+
+REPRO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class ConversationDataset(Dataset):
+    """Conversation dataset with robust root-relative and parent-relative path resolution."""
+
+    def __init__(self, path: str):
+        manifest = Path(path).expanduser().resolve()
+        self.samples = []
+        with manifest.open(encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, 1):
+                if not line.strip():
+                    continue
+                self.samples.append(self._parse(json.loads(line), manifest.parent, line_no))
+        if not self.samples:
+            raise ValueError(f"No samples found in {manifest}")
+
+    @staticmethod
+    def _parse(row: dict, root: Path, line_no: int) -> dict[str, str]:
+        conversation = row.get("conversation") or []
+        expected = [("user", "text"), ("user", "audio"), ("assistant", "text")]
+        if not isinstance(conversation, list) or not all(isinstance(item, dict) for item in conversation):
+            raise ValueError(f"Line {line_no}: conversation must be a list of messages")
+        actual = [(item.get("role"), item.get("message_type")) for item in conversation]
+        if actual != expected:
+            raise ValueError(f"Line {line_no}: expected user/text, user/audio, assistant/text")
+
+        prompt, audio_path, target = (item.get("content") for item in conversation)
+        if not all(isinstance(value, str) and value.strip() for value in (prompt, audio_path, target)):
+            raise ValueError(f"Line {line_no}: prompt, audio path, and target must be non-empty strings")
+
+        audio = Path(audio_path).expanduser()
+        if not audio.is_absolute():
+            candidate1 = (Path(REPRO_ROOT) / audio).resolve()
+            candidate2 = (root / audio).resolve()
+            audio = candidate1 if candidate1.exists() else candidate2
+        return {
+            "audio": str(audio),
+            "prompt": prompt.strip(),
+            "target": target.strip(),
+        }
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> dict[str, str]:
+        return self.samples[index]
+
 
 
 @dataclass
@@ -84,6 +136,26 @@ class ScriptArguments(_BaseScriptArguments):
         default=180.0,
         metadata={"help": "Skip hotword_benchmark audio longer than this during the periodic in-training test. "
                            "Pass a very large value (e.g. 1e9) to include everything."},
+    )
+    # P3: Architectural & Fine-Tuning Improvements
+    freeze_whisper_encoder: bool = field(
+        default=True,
+        metadata={"help": "Freeze Whisper encoder weights to preserve acoustic robustness and prevent catastrophic forgetting."},
+    )
+    freeze_vq_adaptor: bool = field(
+        default=False,
+        metadata={"help": "Freeze VQ adaptor weights between audio encoder and language model."},
+    )
+    use_lora: bool = field(
+        default=False,
+        metadata={"help": "Use PEFT LoRA for language model fine-tuning instead of full parameter fine-tuning."},
+    )
+    lora_r: int = field(default=16, metadata={"help": "LoRA rank r."})
+    lora_alpha: int = field(default=32, metadata={"help": "LoRA scaling alpha."})
+    lora_dropout: float = field(default=0.05, metadata={"help": "LoRA dropout rate."})
+    lora_target_modules: str = field(
+        default="q_proj,v_proj,k_proj,o_proj",
+        metadata={"help": "Comma-separated list of target module names for LoRA."},
     )
 
 
@@ -187,6 +259,47 @@ def main() -> None:
     model.tie_weights()
     model.config.use_cache = False
     model.config.text_config.use_cache = False
+
+    # P3: Freeze Whisper Encoder
+    if script_args.freeze_whisper_encoder:
+        encoder = getattr(getattr(model, "model", model), "whisper_encoder", None)
+        if encoder is not None:
+            for p in encoder.parameters():
+                p.requires_grad = False
+            print("[P3] Successfully froze Whisper encoder (whisper_encoder).")
+
+    # P3: Freeze VQ Adaptor if requested
+    if script_args.freeze_vq_adaptor:
+        adaptor = getattr(getattr(model, "model", model), "vq_adaptor", None)
+        if adaptor is not None:
+            for p in adaptor.parameters():
+                p.requires_grad = False
+            print("[P3] Successfully froze VQ adaptor (vq_adaptor).")
+
+    # P3: LoRA Adaptation
+    if script_args.use_lora:
+        from peft import LoraConfig, get_peft_model
+        targets = [m.strip() for m in script_args.lora_target_modules.split(",") if m.strip()]
+        modules_to_save = []
+        if not script_args.freeze_vq_adaptor:
+            adaptor = getattr(getattr(model, "model", model), "vq_adaptor", None)
+            if adaptor is not None:
+                modules_to_save.append("vq_adaptor")
+        peft_config = LoraConfig(
+            r=script_args.lora_r,
+            lora_alpha=script_args.lora_alpha,
+            target_modules=targets,
+            modules_to_save=modules_to_save if modules_to_save else None,
+            lora_dropout=script_args.lora_dropout,
+            bias="none",
+        )
+        model = get_peft_model(model, peft_config)
+        print("[P3] Successfully initialized PEFT LoRA model:")
+        model.print_trainable_parameters()
+    else:
+        total_p = sum(p.numel() for p in model.parameters())
+        trainable_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"[P3] Model parameter status: {trainable_p:,} trainable / {total_p:,} total ({trainable_p/total_p:.2%})")
 
     trainer = GenerativeMERTrainer(
         model=model,
