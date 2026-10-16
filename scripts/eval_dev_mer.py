@@ -51,6 +51,8 @@ def main():
                          "model is whichever checkpoint the running vLLM container was started against.")
     default_device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     p.add_argument("--device", default=default_device)
+    p.add_argument("--repetition_penalty", type=float, default=1.0,
+                    help="Repetition penalty for generation (e.g. 1.05 or 1.1).")
     args = p.parse_args()
     if args.real_production_url and (args.production_pipeline or args.use_hotword_prompt):
         raise SystemExit("--real_production_url is mutually exclusive with --production_pipeline/--use_hotword_prompt")
@@ -70,6 +72,8 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(
             args.model_path, trust_remote_code=True, dtype=torch.bfloat16
         ).to(device)
+        if args.repetition_penalty != 1.0:
+            model.generation_config.repetition_penalty = args.repetition_penalty
         model.eval()
 
     rows = [json.loads(l) for l in open(DEV_MANIFEST, encoding="utf-8") if l.strip()]

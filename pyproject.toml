@@ -1,0 +1,25 @@
+[project]
+name = "moss-transcribe-diarize-test"
+version = "0.1.0"
+description = "MOSS-Transcribe-Diarize repetition repro and evaluation project"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.2.0",
+    "torchaudio>=2.2.0",
+    "transformers>=4.45.0",
+    "accelerate>=0.34.0",
+    "safetensors>=0.4.0",
+    "soundfile>=0.12.0",
+    "soxr>=0.4.0",
+    "opencc-python-reimplemented>=0.1.7",
+    "tqdm>=4.66.0",
+    "cn2an>=0.5.22",
+    "pypinyin>=0.50.0",
+    "rapidfuzz>=3.9.0",
+    "librosa>=0.10.0",
+    "openpyxl>=3.1.0",
+]
+
+[tool.uv]
+package = false

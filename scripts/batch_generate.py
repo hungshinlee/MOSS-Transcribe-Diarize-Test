@@ -46,7 +46,8 @@ def _left_pad_batch(input_ids: torch.Tensor, attention_mask: torch.Tensor, pad_t
 
 @torch.no_grad()
 def batched_transcribe(model, processor, audio_paths: list, prompts=None, *, max_new_tokens: int = 1200,
-                        batch_size: int = 8, device=None, repetition_penalty: float = 1.0) -> list:
+                        batch_size: int = 8, device=None, repetition_penalty: float = 1.0,
+                        no_repeat_ngram_size: int = 0) -> list:
     """Returns one generated text string per audio path, in the SAME order as
     the input `audio_paths` (internally processed longest-duration-first so
     each batch pads against similar-length neighbors instead of wasting
@@ -90,6 +91,8 @@ def batched_transcribe(model, processor, audio_paths: list, prompts=None, *, max
             "do_sample": False,
             "repetition_penalty": repetition_penalty,
         }
+        if no_repeat_ngram_size > 0:
+            gen_kwargs["no_repeat_ngram_size"] = no_repeat_ngram_size
         generated = model.generate(**gen_kwargs)
         prompt_len = input_ids.shape[1]
         for row in generated[:, prompt_len:]:

@@ -104,7 +104,8 @@ def _load_benchmark_data():
 def run_hotword_eval(model, processor, device, *, batch_size: int = 8, max_new_tokens: int = 1200,
                       candidate_dir: str = None, max_audio_duration_sec: float = 180.0,
                       use_hotword_prompt: bool = False, production_pipeline: bool = False,
-                      real_production_url: str = None, repetition_penalty: float = 1.0) -> dict:
+                      real_production_url: str = None, repetition_penalty: float = 1.0,
+                      no_repeat_ngram_size: int = 0) -> dict:
     """Batched inference + scoring over the 66-example hotword benchmark.
     Returns {"keyword_recall", "mer", "keyword_false_alarm", "n_audio"}.
     Writes per-audio transcription.json under candidate_dir if given (kept
@@ -172,7 +173,8 @@ def run_hotword_eval(model, processor, device, *, batch_size: int = 8, max_new_t
                 prompts.append(prompt)
 
         hyps = batched_transcribe(model, processor, audio_paths, prompts, max_new_tokens=max_new_tokens,
-                                   batch_size=batch_size, device=device, repetition_penalty=repetition_penalty)
+                                   batch_size=batch_size, device=device, repetition_penalty=repetition_penalty,
+                                   no_repeat_ngram_size=no_repeat_ngram_size)
         if production_pipeline:
             # Real post-processing (server.py order: s2tw convert, then hotword_correct
             # per-segment, tags preserved) -- applied AFTER generation, before scoring.
@@ -240,6 +242,8 @@ def main():
     p.add_argument("--device", default=default_device)
     p.add_argument("--repetition_penalty", type=float, default=1.0,
                     help="Repetition penalty for generation (e.g. 1.05 or 1.1 to prevent repeat degeneration loops).")
+    p.add_argument("--no_repeat_ngram_size", type=int, default=0,
+                    help="If > 0, prevent repetition of n-grams of this size (e.g. 4 or 5).")
     args = p.parse_args()
     if args.real_production_url and (args.production_pipeline or args.use_hotword_prompt):
         raise SystemExit("--real_production_url is mutually exclusive with --production_pipeline/--use_hotword_prompt")
@@ -265,7 +269,8 @@ def main():
     result = run_hotword_eval(model, processor, device, batch_size=args.batch_size, candidate_dir=candidate_dir,
                                max_new_tokens=args.max_new_tokens, max_audio_duration_sec=args.max_audio_duration_sec,
                                use_hotword_prompt=args.use_hotword_prompt, production_pipeline=args.production_pipeline,
-                               real_production_url=args.real_production_url, repetition_penalty=args.repetition_penalty)
+                               real_production_url=args.real_production_url, repetition_penalty=args.repetition_penalty,
+                               no_repeat_ngram_size=args.no_repeat_ngram_size)
 
     print(f"\n=== hotword test set: {label} ===")
     print(f"audio count: {result['n_audio']}")
