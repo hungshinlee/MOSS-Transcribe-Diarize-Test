@@ -61,8 +61,7 @@ REPRO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(REPRO_ROOT, "finetune_official"))
 
-sys.path.insert(0, os.path.join(REPRO_ROOT, "data", "hotword_benchmark"))
-import evaluate as hw_eval  # noqa: E402  (module name matches upstream file evaluate.py)
+import evaluate as hw_eval  # noqa: E402  (imports scripts/evaluate.py)
 
 from batch_generate import batched_transcribe  # noqa: E402
 from mer_utils import compute_mer_by_language, strip_tags  # noqa: E402  (shared with finetune_with_eval.py's compute_metrics)

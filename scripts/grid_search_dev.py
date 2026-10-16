@@ -6,7 +6,6 @@ import torch
 REPRO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPRO_ROOT, "scripts"))
 sys.path.insert(0, os.path.join(REPRO_ROOT, "finetune_official"))
-sys.path.insert(0, os.path.join(REPRO_ROOT, "data", "hotword_benchmark"))
 
 from transformers import AutoModelForCausalLM
 from moss_transcribe_diarize.processing_moss_transcribe_diarize import MossTranscribeDiarizeProcessor

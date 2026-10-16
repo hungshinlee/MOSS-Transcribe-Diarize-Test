@@ -43,7 +43,9 @@ MOSS-Transcribe-Diarize-Test/
 │   ├── eval_dev_mer.py           # 支援 --device mps 與 --repetition_penalty
 │   ├── batch_generate.py         # 支援批次推論與解碼防護參數
 │   ├── finetune_with_eval.py     # 整合 Generative MER 驗證的微調主腳本
-│   ├── mer_utils.py              # 字錯誤率 (MER) 計算工具
+│   ├── mer_utils.py              # 字錯誤率 (MER) 計算與中英數文字正規化工具 (自包含不依賴 data/)
+│   ├── evaluate.py               # Hotword benchmark 評估與報表工具 (自帶 MER 與熱詞統計)
+│   ├── grid_search_dev.py        # 懲罰係數超參數網格搜尋腳本
 │   └── production_pipeline.py    # 產品端 KWS 偵測與後處理模擬
 ├── results/                      # 訓練原始歷程、RESULTS_SUMMARY.md、trainer_state.json
 ├── pyproject.toml                # uv 專案設定與相依套件清單
@@ -217,6 +219,17 @@ uv run python scripts/eval_hotword_testset.py \
   --batch_size 1 \
   --max_audio_duration_sec 1e9
 ```
+
+### 7. 獨立執行 Hotword Benchmark 評估報表 (evaluate.py)
+針對候選 ASR 輸出資料夾（需包含 `<audio_id>/transcription.json`）獨立計算熱詞召回率與 MER，並輸出詳細 Excel 報表：
+```bash
+uv run python scripts/evaluate.py \
+  --candidate outputs/repro_8000_vanilla \
+  --output report_repro_8000.xlsx
+```
+
+> [!NOTE]
+> `scripts/mer_utils.py` 與 `scripts/evaluate.py` 均為全自包含模組，內建中英數混合斷詞（`tokenize_mixed`）、中文數字轉阿拉伯數字（`cn2an`）、空格縮寫正規化與通用編輯距離比對。邏輯完全自主受版控，不依賴未開源的外部資料夾或 PyPI 上不相容的第三方 `evaluate` 套件。
 
 ---
 

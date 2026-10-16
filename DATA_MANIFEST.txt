@@ -26,10 +26,11 @@ data/dev_audio.tar.gz
   data/dev_audio/audio/*.wav。
 
 data/hotword_benchmark_audio.tar.gz
-  內容：整個 hotword_benchmark/ 資料夾——評分程式/標準答案（evaluate.py、
-  hotwords.json、pseudo_transcripts.json、true_transcripts/、README.md等）+
-  audio/（66 句真人錄音 + 一些變體檔案，例如 503_Transamine.wav 這種，共 90 個
-  wav），解壓縮後約 201MB。
+  內容：整個 hotword_benchmark/ 資料夾——標註標準答案（hotwords.json、
+  pseudo_transcripts.json、true_transcripts/、README.md等）+ audio/（66 句真人
+  錄音 + 一些變體檔案，例如 503_Transamine.wav 這種，共 90 個 wav），解壓縮後約 201MB。
+  （註：評分程式與文字正規化邏輯已直接重構納入 scripts/mer_utils.py 與 scripts/evaluate.py
+  並受 Git 追蹤管理，免解壓縮即可使用；音檔與基準標註依需求解壓縮至 data/）。
   解壓縮方式：
     cd data && tar -xzf hotword_benchmark_audio.tar.gz
   解壓縮後會產生 data/hotword_benchmark/（含 audio/ 子資料夾）。

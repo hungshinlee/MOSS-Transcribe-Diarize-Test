@@ -18,7 +18,6 @@ REPRO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(REPRO_ROOT, "finetune_official"))
-sys.path.insert(0, os.path.join(REPRO_ROOT, "data", "hotword_benchmark"))  # for evaluate.py, imported by mer_utils
 from moss_transcribe_diarize.inference_utils import DEFAULT_PROMPT, build_transcription_messages, generate_transcription
 from mer_utils import compute_mer, compute_mer_by_language, normalize_for_eval
 from production_pipeline import production_transcribe, real_production_transcribe
