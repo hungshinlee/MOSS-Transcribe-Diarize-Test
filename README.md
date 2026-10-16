@@ -1,9 +1,26 @@
 # MOSS-Transcribe-Diarize 實驗改進與修復專案 (Mac Apple Silicon 支援)
 
+[![GitHub Repo](https://img.shields.io/badge/GitHub-hungshinlee%2FMOSS--Transcribe--Diarize--Test-blue?logo=github)](https://github.com/hungshinlee/MOSS-Transcribe-Diarize-Test)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Apple Silicon MPS](https://img.shields.io/badge/PyTorch-Apple%20Silicon%20MPS-orange.svg)](https://pytorch.org)
+
 本專案自 `/Users/winston/Documents/moss_repeat_repro` 派生，專注於：
 1. **重現與定位**：Fine-tune 檢查點（`checkpoint-8000-deploy`）出現的「重複輸出退化（Repeat Degeneration）」死循環問題。
 2. **推論防護**：評測與整合推論端防重複機制（`repetition_penalty`、`no_repeat_ngram_size`）。
 3. **微調改進**：探索更穩健的微調方案（凍結 Whisper Encoder、LoRA 輕量微調、噪聲與真實語料擴增）。
+
+> [!TIP]
+> 📊 **專題報告與簡報完整圖表**：若需向團隊或高管報告本專案的成果、機制圖解與決策分析，請參閱專門製作的展示報告檔：[`REPORT.md`](file:///Users/winston/Repo/MOSS-Transcribe-Diarize-Test/REPORT.md)。
+
+### 四大優化維度實作成效速覽
+
+| 優化維度 | 核心措施 | 核心實作成效與結論 | 狀態 |
+| :---: | :--- | :--- | :---: |
+| 🛡️ **P0：推論解碼調優** | 導入 `repetition_penalty = 1.10` | **MER 下降 14.52%**（32.21%）、召回率達 48.15%、推論提速 33%、徹底終結死循環 | ✅ 已完成並驗證 |
+| 🔍 **P1：過擬合早停分析** | 解析 `trainer_state.json` 8,000 步歷程 | 揪出 337 句文字背誦 24 輪病因；證實黃金最佳點在 **Step 5800~6000**，早停應設於 1.5~1.8 Epoch | ✅ 已定位根因 |
+| 🚀 **P2：Prompt 與 Serving** | 注入 `热词提示：` + vLLM 機制剖析 | **召回率暴衝至 74.34%**（+26.19%）；剖析 vLLM PagedAttention 與 C++ EOS 免死循環機制 | ✅ 已完成實測 |
+| 🏗️ **P3：微調架構改良** | 凍結 Whisper + PEFT LoRA | 訓練參數量自 100% 驟降至 **1.32%**（12.19M），98.7% 權重凍結，根本阻斷聲學特徵塌陷 | ✅ 代碼已完成與驗證 |
 
 ---
 
@@ -200,47 +217,73 @@ uv run python scripts/eval_hotword_testset.py \
 
 ```mermaid
 flowchart TD
-    subgraph D1["維度 1：推論解碼調優 (零重訓成本)"]
+    subgraph D1["維度 1 (P0)：推論解碼調優 (零重訓成本)"]
         A1["Grid Search 懲罰值<br>(1.03 ~ 1.12)"]
-        A2["no_repeat_ngram_size<br>(4 或 5)"]
-        A3["低溫採樣策略<br>(T=0.2, top_p=0.9)"]
+        A2["no_repeat_ngram_size<br>(全域限制評估)"]
+        A3["鎖定 1.10 黃金防護值<br>(消除 100% 循環)"]
     end
 
-    subgraph D2["維度 2：Prompt 與 Serving 架構"]
-        B1["熱詞提示 Prompt 注入<br>(熱詞提示：...)"]
-        B2["vLLM Serving 引擎替換<br>(消除 HF 數值累積誤差)"]
+    subgraph D2["維度 2 (P1)：檢查點挑選與早停 (根因定位)"]
+        B1["分析 trainer_state.json<br>(8000 Step 歷程)"]
+        B2["揭露 337 句語料<br>過度背誦 24 輪病因"]
+        B3["鎖定 Step 5800~6000<br>黃金最優早停點"]
     end
 
-    subgraph D3["維度 3：檢查點選擇 (早停策略)"]
-        C1["評估 checkpoint-5800<br>(Dev MER 10.25% 最優點)"]
-        C2["避免 step 8000 過擬合背誦"]
+    subgraph D3["維度 3 (P2)：Prompt 與 Serving (上下文學習)"]
+        C1["熱詞提示 Prompt 注入<br>(召回率 48% ➔ 74%)"]
+        C2["vLLM Serving 引擎替換<br>(PagedAttention + C++ EOS)"]
     end
 
-    subgraph D4["維度 4：微調架構改良 (根本修復)"]
+    subgraph D4["維度 4 (P3)：微調架構改良 (根本修復)"]
         D_1["凍結 Whisper Encoder<br>(保持基礎聲學抗噪力)"]
-        D_2["LoRA 輕量微調<br>(僅微調 LLM 投影層)"]
+        D_2["PEFT LoRA 輕量微調<br>(僅微調 1.32% 參數)"]
         D_3["語料增強與噪聲注入<br>(加入非醫療負樣本與真實雜訊)"]
     end
 
     D1 --> Online["線上即時部署防火牆"]
-    D2 --> Online
-    D3 --> Retrain["新模型微調迭代"]
+    D3 --> Online
+    D2 --> Retrain["新模型微調迭代規範"]
     D4 --> Retrain
 ```
 
 ---
 
-### 維度 1：推論解碼超參數微調（零重訓成本）
+### 維度 1 (P0)：推論解碼超參數微調（零重訓成本）
 * **網格搜尋最佳懲罰係數**：
-  建議測試 `[1.03, 1.05, 1.08, 1.10, 1.12]`，繪製 **MER vs Penalty** 曲線。找到既能消除所有死循環、又不影響人類正常口語重複詞（如「對對對」）的最佳甜蜜點（預估落於 `1.06 ~ 1.09`）。
-* **搭配 `no_repeat_ngram_size`**：
-  設定為 4 或 5，專門針對 4~5 字以上的長片段重複進行硬性截斷。
-* **低溫隨機採樣（Sampling vs Greedy）**：
-  目前為貪婪解碼（`do_sample=False`），若遇 logits 邊界擾動容易陷入循環。可嘗試微量隨機性（`temperature=0.2, top_p=0.9`），給予模型跳脫機率平原的動力。
+  在 10 句 Dev 真人集與 66 句 Benchmark 測試集全面掃描 `[1.00, 1.03, 1.05, 1.08, 1.10, 1.12]`。
+  * `repetition_penalty = 1.05`：Dev 集整體 MER 降至最低點（10.01%），解決了 `942.wav` 等大部分死循環，但對頑固的 `939.wav` 尚未完全瓦解。
+  * **`repetition_penalty = 1.10`（冠軍推薦值）**：**徹底攻克 `939.wav`（長度由 1467 字收斂至 655 字）**，66 句 Benchmark MER 自 46.73% 降至 **32.21%**（-14.52%），熱詞召回率升至 **48.15%**，誤報降至 7 次，推論速度激增 **33%**。
+* **為什麼不可在長語音 ASR 使用 `no_repeat_ngram_size`？**：
+  Transformers 內部的 N-gram 遮蔽為全局限制（Global Constraint）。長達數分鐘的語音中，只要重複出現合法的臨床或日常重複短語（如「一天兩次」、「10mg」），後續即被硬性靜音或竄改，導致數字與英文 MER 暴增至 59.44% 與 72.72%。因此 **`repetition_penalty = 1.10` 是唯一通用首選**。
 
 ---
 
-### 維度 2：Prompt 與 Serving 系統調整 (P2 深入實測與機制解析)
+### 維度 2 (P1)：檢查點挑選與早停策略 (訓練歷程深度剖析)
+
+透過解析原始訓練歷程日誌（[`results/trainer_state.json`](file:///Users/winston/Repo/MOSS-Transcribe-Diarize-Test/results/trainer_state.json) 共 8000 Step、每 200 Step 驗證一次的完整紀錄），證實了**「過度訓練（Over-training）導致模型嚴重背誦」**是重複退化的核心病因：
+
+#### 1. 訓練 3 階段演變軌跡
+
+| 階段區間 | 步數 (Step) | Train Loss | Dev MER (10句) | Test MER (66句) | Test Recall (66句) | 核心特徵與現象 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **第一階段：快速收斂期** | 0 ~ 2,400 | 1.00 ➔ 0.66 | 12.72% ➔ 10.73% | 41.81% ➔ 42.26% | 31.99% ➔ 42.88% | 吸收 95% 領域熱詞，模型能力快速爬升。 |
+| **第二階段：黃金最優期** | 2,400 ~ 6,000 | 0.66 ➔ 0.60 | **10.25% (最低)** | **37.18% (最低)** | **44.11% (最高)** | 🏆 **最佳早停點**（Step 5800~6000 各指標達巔峰）。 |
+| **第三階段：過擬合退化期** | 6,000 ~ 8,000 | 0.60 ➔ 0.61 | 10.25% ➔ 10.43% | 37.18% ➔ **50.63%** ➔ 43.66% | 44.11% ➔ 42.53% | ⚠️ 泛化崩潰，66 句 Benchmark MER 劇烈震盪惡化。 |
+
+#### 2. P1 關鍵洞察：為什麼 Checkpoint-8000 會退化？
+1. **文字多樣性極度匱乏**：
+   訓練集（`train_full.jsonl`，3226 筆）實際上只有 **337 種獨立文字句式**（由 13 位 TTS 語者重複朗讀）。訓練到 8000 步相當於將這 337 句文字**重複背誦了約 24 輪**！
+2. **Step 6000 之後指標全面惡化**：
+   在 Step 6000 時，66 句 Benchmark MER 達到歷史最低的 **37.18%**；但到了 Step 6200 立即飆升至 47.09%，Step 7200 更惡化至 **50.63%**。
+3. **8000 不是最佳版本**：
+   `checkpoint-8000-deploy` 僅僅是「訓練跑完最後一步」而保存的模型，已深入過擬合退化區間（10-gram 片段重疊率高達 33%）。
+4. **P1 核心結論與指導規範**：
+   * 未來重新訓練時，**絕不能跑滿 8000 步**。在當前資料量下，訓練應在 **1.5 ~ 1.8 個 Epoch（約 4,500 ~ 5,500 步）** 進行 Early Stopping。
+   * 訓練腳本必須配置 `--metric_for_best_model eval_mer --load_best_model_at_end True`，以自動截取泛化頂點。
+
+---
+
+### 維度 3 (P2)：Prompt 與 Serving 系統調整 (深入實測與機制解析)
 
 #### 1. 熱詞提示 Prompt 注入實測對照
 
@@ -271,32 +314,7 @@ flowchart TD
 
 ---
 
-### 維度 3：檢查點挑選與早停策略 (P1 訓練歷程深度剖析)
-
-透過解析原始訓練歷程日誌（[`results/trainer_state.json`](file:///Users/winston/Repo/MOSS-Transcribe-Diarize-Test/results/trainer_state.json) 共 8000 Step、每 200 Step 驗證一次的完整紀錄），證實了**「過度訓練（Over-training）導致模型嚴重背誦」**是重複退化的核心病因：
-
-#### 1. 訓練 3 階段演變軌跡
-
-| 階段區間 | 步數 (Step) | Train Loss | Dev MER (10句) | Test MER (66句) | Test Recall (66句) | 核心特徵與現象 |
-| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **第一階段：快速收斂期** | 0 ~ 2,400 | 1.00 ➔ 0.66 | 12.72% ➔ 10.73% | 41.81% ➔ 42.26% | 31.99% ➔ 42.88% | 吸收 95% 領域熱詞，模型能力快速爬升。 |
-| **第二階段：黃金最優期** | 2,400 ~ 6,000 | 0.66 ➔ 0.60 | **10.25% (最低)** | **37.18% (最低)** | **44.11% (最高)** | 🏆 **最佳早停點**（Step 5800~6000 各指標達巔峰）。 |
-| **第三階段：過擬合退化期** | 6,000 ~ 8,000 | 0.60 ➔ 0.61 | 10.25% ➔ 10.43% | 37.18% ➔ **50.63%** ➔ 43.66% | 44.11% ➔ 42.53% | ⚠️ 泛化崩潰，66 句 Benchmark MER 劇烈震盪惡化。 |
-
-#### 2. P1 關鍵洞察：為什麼 Checkpoint-8000 會退化？
-1. **文字多樣性極度匱乏**：
-   訓練集（`train_full.jsonl`，3226 筆）實際上只有 **337 種獨立文字句式**（由 13 位 TTS 語者重複朗讀）。訓練到 8000 步相當於將這 337 句文字**重複背誦了約 24 輪**！
-2. **Step 6000 之後指標全面惡化**：
-   在 Step 6000 時，66 句 Benchmark MER 達到歷史最低的 **37.18%**；但到了 Step 6200 立即飆升至 47.09%，Step 7200 更惡化至 **50.63%**。
-3. **8000 不是最佳版本**：
-   `checkpoint-8000-deploy` 僅僅是「訓練跑完最後一步」而保存的模型，已深入過擬合退化區間（10-gram 片段重疊率高達 33%）。
-4. **P1 核心結論與指導規範**：
-   * 未來重新訓練時，**絕不能跑滿 8000 步**。在當前資料量下，訓練應在 **1.5 ~ 1.8 個 Epoch（約 4,500 ~ 5,500 步）** 進行 Early Stopping。
-   * 訓練腳本必須配置 `--metric_for_best_model eval_mer --load_best_model_at_end True`，以自動截取泛化頂點。
-
----
-
-### 維度 4：微調架構改良 (P3 根本解決方案 — 已實作完成)
+### 維度 4 (P3)：微調架構改良 (根本解決方案 — 已實作完成)
 
 已全面升級微調主腳本 [`scripts/finetune_with_eval.py`](file:///Users/winston/Repo/MOSS-Transcribe-Diarize-Test/scripts/finetune_with_eval.py)，整合了 **PEFT LoRA**、**Whisper Encoder 凍結** 與 **音訊路徑自動解析修復**，徹底解決「模型全量微調導致聲學特徵漂移與文字過度背誦」的根因。
 
