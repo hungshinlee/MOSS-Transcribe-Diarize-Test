@@ -74,8 +74,15 @@ source .venv/bin/activate
 ### 1. 問題現象與原理解析
 * **重複退化 (Repeat Degeneration)**：MOSS 由語音編碼器 (Whisper Encoder) 與自回歸語言解碼器 (Qwen LLM) 組成。在貪婪解碼（Greedy search）下，自回歸語言模型容易陷入自注意力概率自強化的「死循環」陷阱（Neural Text Degeneration, [Holtzman et al., 2020](https://arxiv.org/abs/1904.09751)；[Fu et al., 2021](https://arxiv.org/abs/2012.14660)）。一旦模型遇到特定雜訊或停頓輸出了短重複片段，下一步預測該詞的注意力權重便會迅速飆升，導致模型連續輸出相同字詞（如重複「因為，」上百次），直到吃滿 `max_new_tokens` 預算，MER 飆高至近 100%。
 * **Repetition Penalty 防護原理**：源自 CTRL 架構（[Keskar et al., 2019](https://arxiv.org/abs/1909.05858)），在計算 Softmax 機率分佈前，對已生成的 Token logit 施加乘法/除法懲罰：
-  $$logit_i = \begin{cases} logit_i / r & \text{若 } logit_i > 0 \\ logit_i \times r & \text{若 } logit_i \le 0 \end{cases}$$
-  當 $r > 1.0$（如 1.05 ~ 1.10）時，已輸出過的字詞機率會被適度打壓，促使模型轉向其他合理字詞或提早輸出結束標記 `<|im_end|>`，瞬間打斷死循環。配合 N-gram 遮斷機制（[Paulus et al., 2018](https://arxiv.org/abs/1705.04304)），可對長片段重複提供雙重保障。
+
+$$
+\text{logit}_i = \begin{cases} 
+\text{logit}_i / r, & \text{if } \text{logit}_i > 0 \\ 
+\text{logit}_i \times r, & \text{if } \text{logit}_i \le 0 
+\end{cases}
+$$
+
+當懲罰係數 $r > 1.0$（推薦值為 $1.05 \sim 1.10$）時，已輸出過的字詞機率會被適度打壓，促使模型轉向其他合理字詞或提早輸出結束標記 `<|im_end|>`，瞬間打斷死循環。配合 N-gram 遮斷機制（[Paulus et al., 2018](https://arxiv.org/abs/1705.04304)），可對長片段重複提供雙重保障。
 
 ### 2. 66 句 Benchmark 實測數據對比 (P0 完整調優矩陣)
 
@@ -309,7 +316,7 @@ flowchart TD
 歷史紀錄（[`results/RESULTS_SUMMARY.md`](file:///Users/winston/Repo/MOSS-Transcribe-Diarize-Test/results/RESULTS_SUMMARY.md)）證實，同一個模型在 **真實 vLLM Serving 容器** 運行下，66 句 Benchmark 達到 **0 句退化**（MER 降至 28.57%）。三大底層架構原因分析如下：
 
 1. **PagedAttention 的非連續記憶體定址與浮點運算結合律**：
-   * 貪婪解碼重複退化的本質是處於臨界點的兩種 Token logits 差距極小（$10^{-3} \sim 10^{-4}$）。
+   * 貪婪解碼重複退化的本質是處於臨界點的兩種 Token logits 差距極小（約 $10^{-3} \sim 10^{-4}$ ）。
    * HuggingFace 走連續記憶體的 PyTorch SDPA，而 vLLM 走分頁記憶體的 PagedAttention 算子。在 BF16/FP16 運算不具備結合律（$(A+B)+C \neq A+(B+C)$）的前提下，微小的數值累積順序差異剛好打破了死循環吸引子（Attractor），使模型及時走向正常分支。
 2. **批次左側補零（Left-Padding）干擾被徹底消除**：
    * HuggingFace 進行批次推論必須左側補齊 Padding Token，即使有 attention mask，仍會對 Softmax 分母與 LayerNorm 帶來微量數值擾動。
@@ -447,7 +454,7 @@ uv run python scripts/finetune_with_eval.py \
   *LoRA: Low-Rank Adaptation of Large Language Models.*  
   International Conference on Learning Representations (ICLR 2022).  
   論文連結：[arXiv:2106.09685](https://arxiv.org/abs/2106.09685)  
-  > **核心根據**：LoRA 原論文。證明了凍結預訓練基礎權重、僅微調低秩矩陣（$W = W_0 + \Delta W$），能在獲得領域適配能力的同時，完全保留預訓練模型的終止標記生成（EOS prediction）與抗過擬合能力。
+  > **核心根據**：LoRA 原論文。證明了凍結預訓練基礎權重、僅微調低秩矩陣（ $W = W_0 + \Delta W$ ），能在獲得領域適配能力的同時，完全保留預訓練模型的終止標記生成（EOS prediction）與抗過擬合能力。
 
 ### 5. 推論 Serving 引擎與 Attention 實作差異 (vLLM & PagedAttention)
 - **Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C. H., Gonzalez, J. E., Zhang, H., & Stoica, I. (2023).**  
